@@ -2,36 +2,29 @@ import numpy as np
 from numpy.lib import diff
 from pandas.io.parsers import read_csv
 import matplotlib.pyplot as plt
-import scipy.optimize
+import scipy.optimize as opt
 from scipy.io import loadmat
 
-def oneVsAll(X, y, num_labels, lamb):
-    """
-    Entrenamiento de varios clasificadores por regresión logística
-    """
-    initial_theta = np.zeros(X.shape[1])
-    all_theta = np.zeros((num_labels, X.shape[1]))
-    y.shape = (y.shape[0],)
-
-    for c in np.arange(1, num_labels + 1):
-        result = scipy.optimize.fmin_tnc(fun_J, initial_theta, new_theta, args=(X, (y == c)*1, lamb))
-        all_theta[c-1] = result[0]
-
-    return all_theta
-
 def sigmoide_fun(Z):
-    G = 1 / (1 + (np.exp(-Z)))
+    return 1 / (1 + (np.exp(-Z)))
 
-    return G
+def getEtiqueta(Y, etiqueta):
+    """
+    Devuelve el vector de booleanos para determinar
+    que se trata de la etiqueta correcta
+    """
+    y_etiqueta = np.ravel(Y) == etiqueta # Vector de booleanos
+    y_etiqueta = y_etiqueta * 1 # Conversión de bool a 0|1
+    return y_etiqueta   # (5K,)
 
-def fun_J(Theta, X, Y, lamb):
+def coste(Theta, X, Y, lamb):
     """
         Calculates the J function of the cost
         of the Logistic Regresion    
     """
-    m = X.shape[1]
-    S = sigmoide_fun(np.dot(X, Theta))
-    Sum1 = np.dot(Y, np.log(S))
+    m = X.shape[0]  # m = 5K
+    S = sigmoide_fun(np.matmul(X, Theta)) # (5K,)
+    Sum1 = np.dot(Y, np.log(S)) # 
 
     # This add is to dodge the log(0)
     Diff = (1 - S) + 0.00001
@@ -45,48 +38,68 @@ def fun_J(Theta, X, Y, lamb):
 
     return Sum 
 
-def new_theta(Theta, X, Y, lamb):
+def gradiente(theta, X, Y, lamb):
     """
         Calculate the new value of Theta with matrix
     """
-    m = X.shape[1]
-    Z = np.matmul(X, Theta)
-    S = sigmoide_fun(Z)
-    Diff = S - Y
+    m = X.shape[0]  # m = 5K
+    S = sigmoide_fun(np.matmul(X, theta))   # (5K,)
+    diff = S - Y # Y.shape = (5K,)
+    newTheta = (1 / m) * np.matmul(X.T, diff) + (lamb/m) * theta
+    newTheta[0] -= (lamb/m) * theta[0]
 
-    X_t = np.transpose(X)
-    NewTheta = (1 / m) * np.matmul(X_t, Diff) + (lamb/m) * Theta
-    NewTheta[0] -= (lamb/m) * Theta[0]
+    return newTheta
 
-    return NewTheta
+def evalua(i, theta, X, Y): 
+    S = sigmoide_fun(np.matmul(X, theta))   # (5K,)
+    pos = np.where(S >= 0.5)   #(5K,)
+    neg = np.where(S < 0.5) #(5K,)
+    posExample = np.where(Y == 1)
+    negExample = np.where(Y == 0)
 
-def evaluation(all_thetas, X, y): 
-    total = X.shape[0]
-    percentage = 0
-    maxH = -9999
-    maxIndex = -1
-    for i in range(total):
-        for j in range(all_thetas.shape[0]):
-            sig = sigmoide_fun(np.dot(X[i], all_thetas[j]))
-            if  sig > maxH:
-                maxH = sig
-                maxIndex = j
-        if maxIndex == y[i]:
-            percentage += 1
+    # intersect1d: sirve para coger añadir elementos al vector
+    # cuando éstos sean iguales
+    totalPos = np.intersect1d(pos, posExample).shape[0] / S.shape[0]
+    totalNeg = np.intersect1d(neg, negExample).shape[0] / S.shape[0]
+    # El porcentaje total sale de la cantidad de ejemplos identificados
+    # como la etiqueta y de la cantidad que ha identifiado que no son la etiqueta
+    print("Total {}: {}%".format(i, (totalPos + totalNeg) * 100))
+    return totalPos + totalNeg
 
-    return (percentage / total) * 100
+def oneVsAll(X, y, num_etiquetas, reg):
+    """
+    Entrenamiento de varios clasificadores por regresión logística
+    """
+    m = X.shape[1]  # m = 400
+    theta = np.zeros((num_etiquetas, m)) # (10, 400)
+    y_etiquetas = np.zeros((y.shape[0], num_etiquetas)) # (5K, 10)
+
+    for i in range(num_etiquetas):
+        y_etiquetas[:, i] = getEtiqueta(y, i)
+    # Las etiquetas de los 0's
+    y_etiquetas[:, 0] = getEtiqueta(y, 10)
+
+    for i in range(num_etiquetas):
+        # Cálculo del theta óptimo para cada ejemplo de entrenamiento, para cada etiqueta
+        # theta[i, :] -> (400,) para calcular el theta óptimo de cada px de cada img
+        result = opt.fmin_tnc(func = coste, x0 = theta[i, :], fprime = gradiente,
+                args=(X, y_etiquetas[:, i], reg))
+        theta[i, :] = result[0]
+
+    # Evaluación con el valor óptimo (theta[i, :])
+    # de cada etiqueta y_etiquetas[:, i]. 
+    evaluacion = np.zeros(num_etiquetas) # (10,)
+    for i in range(num_etiquetas):
+        evaluacion[i] = evalua(i, theta[i, :], X, y_etiquetas[:, i])
+    print("Evaluación media: ", evaluacion.mean() * 100)
+    return 0
 
 #main
 data = loadmat ('./src/ex3data1.mat')
-y = data ['y']
-X = data ['X']
+y = data ['y']  # (5K, 1)
+X = data ['X']  # (5K, 400)
 
-# Number of images
-m = X.shape[0]
-XX = np.hstack([np.ones([m, 1]), X])
-
-all_thetas = oneVsAll(XX, y, 10, 0.1)
-print("PERCENTAGE: ", evaluation(all_thetas, XX, y))
+all_thetas = oneVsAll(X, y, 10, 0.1)
 
 # Muestra los números de forma aleatoria
 sample = np.random.choice(X.shape[0], 10)
