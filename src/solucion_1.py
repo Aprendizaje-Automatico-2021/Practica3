@@ -50,6 +50,23 @@ def gradiente(theta, X, Y, lamb):
 
     return newTheta
 
+def neural_net(X, thetas1, thetas2):
+    """
+    Función que calcula los resultados de la red neuronal
+    detalla en el enunciado
+    """
+    # Input layer
+    a1 = X
+    # Hidden layer
+    aux = np.insert(a1, 0, 1) # (401,)
+    z2 = np.matmul(thetas1, aux)
+    a2 = sigmoide_fun(z2) # (25,)
+    # Output layer
+    aux = np.insert(a2, 0, 1)
+    z3 = np.matmul(thetas2, aux)
+    a3 = sigmoide_fun(z3) # (10)
+    return a3
+
 def evalua(i, theta, X, Y): 
     S = sigmoide_fun(np.matmul(X, theta))   # (5K,)
     pos = np.where(S >= 0.5)   #(5K,)
@@ -99,10 +116,32 @@ data = loadmat ('./src/ex3data1.mat')
 y = data ['y']  # (5K, 1)
 X = data ['X']  # (5K, 400)
 
-all_thetas = oneVsAll(X, y, 10, 0.1)
+#all_thetas = oneVsAll(X, y, 10, 0.1)
 
 # Muestra los números de forma aleatoria
 sample = np.random.choice(X.shape[0], 10)
 plt.imshow(X[sample, :].reshape(-1, 20).T)
 plt.axis('off')
+
+#PARTE 2
+thetas = loadmat("./src/ex3weights.mat") # matriz que contiene las thetas
+thetas1,thetas2 = thetas["Theta1"], thetas["Theta2"] # (25, 401)
+
+# Valoración a partir de ejemplos aleatorios
+print ("Sample: ", sample)
+indexResult = np.zeros(10) # auxiliar para guardar los resultados indexados
+for i in range(10):
+    indexResult[i] = np.argmax(neural_net(X[sample[i],:],thetas1,thetas2))
+print("La red interpreta: ", (indexResult) + 1)
+
+# Cálculo del porcentaje de aciertos con nuestros resultados
+numAciertos = 0
+for i in range(X.shape[0]):
+    indexResult2 = np.argmax(neural_net(X[i,:],thetas1, thetas2))
+    # 0 -> 10
+    if(indexResult2 + 1) == y[i]:
+        numAciertos += 1
+print("Porcentaje de aciertos: ", (numAciertos / X.shape[0]) * 100)
+
+# Para no parar el programa antes
 plt.show()
